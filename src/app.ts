@@ -6,7 +6,7 @@ import {
     UniswapRouterV2__factory
 } from '../out/typechain';
 import * as constants from '../constants';
-import { parseSwapEthInput } from './types/swapEthForTokensInput';
+import { parseSwapEthInput, SwapEthForTokensInput } from './types/swapEthForTokensInput';
 
 const provider: JsonRpcProvider = new ethers.providers.WebSocketProvider(env.WS_PROVIDER);
 const signer = new ethers.Wallet(env.PRIVATE_KEY, provider);
@@ -50,13 +50,7 @@ const frontRunSwap = async (tx: ethers.providers.TransactionResponse, addressTo:
 
     const swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
 
-    const txData = tx.data;
-
-    const methodId = txData.substr(0, 10);
-
-    const signature = constants.swapSupportedMethods[methodId];
-    const functionName = signature.substr(0, signature.indexOf('('),);
-    const args = parseSwapEthInput(swapRouter.interface.decodeFunctionData(functionName, txData));
+    const args = getSwapArgumentsFromTx(tx);
 
     console.log(args);
 
@@ -80,6 +74,12 @@ const frontRunSwap = async (tx: ethers.providers.TransactionResponse, addressTo:
         profit: balanceAfterSwap.sub(ethBalance),
         txReceipt: receipt
     };
+}
+
+const getSwapArgumentsFromTx = (tx: ethers.providers.TransactionResponse): SwapEthForTokensInput => {
+    const signature = constants.swapSupportedMethods[tx.data.substr(0, 10)];
+    const functionName = signature.substr(0, signature.indexOf('('),);
+    return parseSwapEthInput(UniswapRouterV2__factory.createInterface().decodeFunctionData(functionName, tx.data));
 }
 
 const validateTransaction = (tx: ethers.providers.TransactionResponse): boolean => {
