@@ -4,14 +4,17 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "prestart": "tsc",
+    "typegen": "typechain --target ethers-v5 --out-dir ./out/typechain './abis/**/*.json'",
+    "prestart": "yarn typegen && tsc",
     "start": "node -r dotenv/config ./out/index.js dotenv_config_path=./.env"
   },
   "devDependencies": {
+    "@typechain/ethers-v5": "^8.0.5",
     "@types/node": "^16.11.11",
     "axios": "^0.24.0",
     "dotenv": "^10.0.0",
     "ethers": "^5.5.2",
+    "typechain": "^6.0.5",
     "util": "^0.12.4",
     "web3": "^1.6.1"
   }
