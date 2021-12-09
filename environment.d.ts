@@ -4,7 +4,8 @@ declare global {
             WS_PROVIDER: string,
             PROFIT_ADDRESS: string,
             PRIVATE_KEY: string,
-            CHAIN_ID: number
+            CHAIN_ID: number,
+            MIN_SLIPPAGE_PERCENTAGE: number,
         }
     }
 }

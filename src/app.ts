@@ -5,12 +5,11 @@ import {
     ERC20__factory,
     UniswapRouterV2__factory
 } from '../out/typechain';
-import * as constants from '../constants';
+import { provider, network, signer, swapHandlers } from '../constants';
 import { parseSwapEthInput, SwapEthForTokensInput } from './types/swapEthForTokensInput';
+import { ISwapHandler } from './swapHandlers/swapHandlerBase';
 
-const provider: JsonRpcProvider = new ethers.providers.WebSocketProvider(env.WS_PROVIDER);
-const signer = new ethers.Wallet(env.PRIVATE_KEY, provider);
-const network = constants.networkConfigs[env.CHAIN_ID];
+let currentHandledTx: string | undefined = undefined;
 
 export default async () => {
     console.log('Started FrontRunning')
@@ -18,76 +17,86 @@ export default async () => {
 }
 
 const handlePendingTransaction = async (txHash: string) => {
+    if (currentHandledTx) return;
+
     const tx = await provider.getTransaction(txHash);
 
-    if (!(tx && tx.to)) {
-        console.log(`Invalid tx`);
+    if (!(tx && tx.to && tx.gasPrice && tx.value)) {
+        console.error(`Invalid tx`);
         return;
     }
 
     if (!network.swapRouterAddresses.includes(tx.to)) {
-        console.log(`Tx 'to' is not a swapRouter. To: ${tx.to}`);
+        console.error(`Tx 'to' is not a swapRouter. To: ${tx.to}`);
         return;
     }
 
-    if (!isNeededMethodId(tx.data)) {
-        console.log(`Unsupported swap method`);
+    const methodId = getMethodIdFromInputData(tx.data);
+
+    if (!isNeededMethodId(methodId)) {
+        console.error(`Unsupported swap method`);
         return;
     }
 
-    if (!validateTransaction(tx)) return;
-
-    await frontRunSwap(tx, tx.to);
+    currentHandledTx = tx.hash;
+    try {
+        await executeFrontRunSwap(tx, swapHandlers[methodId], tx.to);
+    } catch (err) {
+        console.error(err);
+    }
+    finally {
+        currentHandledTx = undefined;
+    }
 }
 
-type FrontRunSwapMethodResult = {
-    profit: BigNumber
-    txReceipt: ethers.ContractReceipt
-}
+const executeFrontRunSwap = async (tx: ethers.providers.TransactionResponse, handler: ISwapHandler, addressTo: string) => {
+    if (currentHandledTx && currentHandledTx !== tx.hash) {
+        console.info('Already performing front run swap');
+        return;
+    }
 
-const frontRunSwap = async (tx: ethers.providers.TransactionResponse, addressTo: string): Promise<FrontRunSwapMethodResult> => {
     console.log('!! Front Run Swap !!')
 
     const swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
 
-    const args = getSwapArgumentsFromTx(tx);
+    await handler.handleSwap(tx, swapRouter);
 
-    console.log(args);
+    // console.log('decoded args: ', args);
 
-    const ethBalance = await signer.getBalance();
-    const maxEthToSwap = utils.parseEther('0.1');
-    // todo check for token balance 
-    const ethToSwap =
-        ethBalance.gt(maxEthToSwap) ?
-            maxEthToSwap :
-            ethBalance;
+    // const tokenAddress = args.path[args.path.length];
+    // const token = ERC20__factory.connect(tokenAddress, signer);
+    // console.log('Buy Token address: ', tokenAddress);
 
-    const receipt = await (await swapRouter.swapExactETHForTokens(0, args.path, signer.address, 0, {
-        value: ethToSwap,
-        gasPrice: tx.gasPrice?.add(1),
-        from: signer.address
-    })).wait();
+    // const tokenBalanceBeforeSwap = await token.balanceOf(signer.address);
+    // const ethBalanceBeforeSwap = await signer.getBalance();
 
-    const balanceAfterSwap = await signer.getBalance();
+    // const ethToSwap = getAmountToFrontrunSwap(tx.value, ethBalanceBeforeSwap);
 
-    return {
-        profit: balanceAfterSwap.sub(ethBalance),
-        txReceipt: receipt
-    };
+    // const receipt = await (await swapRouter.swapExactETHForTokens(0, args.path, signer.address, 0, {
+    //     value: ethToSwap,
+    //     gasPrice: tx.gasPrice?.add(1),
+    //     maxPriorityFeePerGas: (tx.maxPriorityFeePerGas ?? BigNumber.from('1')).add(BigNumber.from('1')),
+    //     from: signer.address
+    // })).wait();
+
+    // const ethBalanceAfterSwap = await signer.getBalance();
+    // const tokenBalanceAfterSwap = await token.balanceOf(signer.address);
+
+    // return {
+    //     ethBalanceBefore: ethBalanceBeforeSwap,
+    //     ethBalanceAfter: ethBalanceAfterSwap,
+    //     tokenBalanceBefore: tokenBalanceBeforeSwap,
+    //     tokenBalanceAfter: tokenBalanceAfterSwap,
+    //     txReceipt: receipt
+    // };
 }
 
-const getSwapArgumentsFromTx = (tx: ethers.providers.TransactionResponse): SwapEthForTokensInput => {
-    const signature = constants.swapSupportedMethods[tx.data.substr(0, 10)];
-    const functionName = signature.substr(0, signature.indexOf('('),);
-    return parseSwapEthInput(UniswapRouterV2__factory.createInterface().decodeFunctionData(functionName, tx.data));
+const getMethodIdFromInputData = (inputData: string): string => {
+    if (!inputData || inputData.length < 10) throw new Error('Input data has no method id');
+    return inputData.substr(0, 10);
 }
 
-const validateTransaction = (tx: ethers.providers.TransactionResponse): boolean => {
-    // todo: implement
-    return true;
-}
-
-const isNeededMethodId = (inputData: string): boolean => {
-    if (!inputData || inputData.length < 10) return false;
-    return Boolean(constants.swapSupportedMethods[inputData.substr(0, 10)]);
+const isNeededMethodId = (methodId: string): boolean => {
+    if (!methodId) return false;
+    return Boolean(swapHandlers[methodId]);
 }
