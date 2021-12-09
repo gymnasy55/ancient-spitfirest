@@ -1,13 +1,18 @@
-import { ethers, BigNumber, utils } from "ethers";
-import { provider, network, signer } from '../../constants';
+import { ethers, BigNumber } from "ethers";
+import { network, signer } from '../../constants';
 import { ERC20, ERC20__factory, UniswapRouterV2, UniswapRouterV2__factory } from "../../out/typechain";
 import { calculateSlippage, bigNumberToNumber } from "../helpers";
 import { parseSwapEthInput, SwapEthForTokensInput } from "../types/swapEthForTokensInput";
 import { SwapHandlerBase } from './swapHandlerBase';
 import fs from 'fs';
-import { FixedFormat } from "@ethersproject/bignumber";
 
 export class SwapExactEthForTokensHandler extends SwapHandlerBase {
+    public getFunctionSignature(): string {
+        return 'swapExactETHForTokens(uint256,address[],address,uint256)'
+    }
+
+    public getMethodId(): string { return ''; }
+
     public async handleSwap(tx: ethers.providers.TransactionResponse, router: UniswapRouterV2): Promise<void> {
         if (!tx.to) throw new Error('Tx "to" is null or undefined');
 
@@ -62,11 +67,6 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
         console.log('Profit: ', bigNumberToNumber(ethToSend.sub(ethGet), 18))
         console.log('\n\n');
     }
-    public getFunctionSignature(): string {
-        return 'swapExactETHForTokens(uint256,address[],address,uint256)'
-    }
-
-    public getMethodId(): string { return ''; }
 
     private async performFrontrunSwap(
         router: UniswapRouterV2,

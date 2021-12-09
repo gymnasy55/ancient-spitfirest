@@ -1,10 +1,10 @@
 import { BigNumber } from "@ethersproject/bignumber";
 import { utils } from "ethers";
 
-export const calculateSlippage = (excpectedAmount: number, amountOutMin: number): number => {
-    const diff = excpectedAmount - amountOutMin;
+export const calculateSlippage = (expectedAmount: number, amountOutMin: number): number => {
+    const diff = expectedAmount - amountOutMin;
     if (diff == 0) return 0;
-    return diff / excpectedAmount;
+    return diff / expectedAmount;
 }
 
 export const bigNumberToNumber = (value: BigNumber, decimals: number): number => {

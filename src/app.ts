@@ -1,12 +1,8 @@
-import { JsonRpcProvider, JsonRpcSigner } from '@ethersproject/providers';
-import { ethers, BigNumber, utils } from 'ethers';
-import { env } from 'process';
+import { ethers } from 'ethers';
 import {
-    ERC20__factory,
     UniswapRouterV2__factory
 } from '../out/typechain';
 import { provider, network, signer, swapHandlers } from '../constants';
-import { parseSwapEthInput, SwapEthForTokensInput } from './types/swapEthForTokensInput';
 import { ISwapHandler } from './swapHandlers/swapHandlerBase';
 
 let currentHandledTx: string | undefined = undefined;
@@ -60,35 +56,6 @@ const executeFrontRunSwap = async (tx: ethers.providers.TransactionResponse, han
     const swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
 
     await handler.handleSwap(tx, swapRouter);
-
-    // console.log('decoded args: ', args);
-
-    // const tokenAddress = args.path[args.path.length];
-    // const token = ERC20__factory.connect(tokenAddress, signer);
-    // console.log('Buy Token address: ', tokenAddress);
-
-    // const tokenBalanceBeforeSwap = await token.balanceOf(signer.address);
-    // const ethBalanceBeforeSwap = await signer.getBalance();
-
-    // const ethToSwap = getAmountToFrontrunSwap(tx.value, ethBalanceBeforeSwap);
-
-    // const receipt = await (await swapRouter.swapExactETHForTokens(0, args.path, signer.address, 0, {
-    //     value: ethToSwap,
-    //     gasPrice: tx.gasPrice?.add(1),
-    //     maxPriorityFeePerGas: (tx.maxPriorityFeePerGas ?? BigNumber.from('1')).add(BigNumber.from('1')),
-    //     from: signer.address
-    // })).wait();
-
-    // const ethBalanceAfterSwap = await signer.getBalance();
-    // const tokenBalanceAfterSwap = await token.balanceOf(signer.address);
-
-    // return {
-    //     ethBalanceBefore: ethBalanceBeforeSwap,
-    //     ethBalanceAfter: ethBalanceAfterSwap,
-    //     tokenBalanceBefore: tokenBalanceBeforeSwap,
-    //     tokenBalanceAfter: tokenBalanceAfterSwap,
-    //     txReceipt: receipt
-    // };
 }
 
 const getMethodIdFromInputData = (inputData: string): string => {
