@@ -4,13 +4,14 @@ import { INetworkInfoConfig } from "./src/types/networkInfo";
 import { SwapExactEthForTokensHandler } from './src/swapHandlers/swapExactEthForTokens';
 import { JsonRpcProvider } from '@ethersproject/providers';
 import { env } from 'process';
+import fs from 'fs';
 import { ISwapHandler } from "./src/swapHandlers/swapHandlerBase";
 
 const getTokensListForNetwork = (networkId: number) => {
-    return require(`./tokensList/${networkId}.json`) as string[];
+    return JSON.parse(fs.readFileSync(`./tokensList/${networkId}.json`).toString('utf8')) as string[];
 }
 
-export const networkConfigs: INetworkInfoConfig = {
+const networkConfigs: INetworkInfoConfig = {
     [1]: { // ethereum mainnet
         swapRouterAddresses: ['0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'],
         stableUsd: { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6 },
@@ -46,6 +47,18 @@ export const networkConfigs: INetworkInfoConfig = {
             }
         },
         tokensList: []//getTokensListForNetwork(5)
+    },
+    [97]: {
+        swapRouterAddresses: ['0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3'],
+        stableUsd: { address: '0x7ef95a0fee0dd31b22626fa2e10ee6a223f8a684', decimals: 18 },
+        wethAddress: { address: '0xae13d989dac2f0debff460ac112a837c89baa7cd', decimals: 18 },
+        methodsConfig: {
+            swapExactEthForTokens: {
+                minTxEthValue: utils.parseEther('0.01'),
+                maxFREthValue: utils.parseEther('0.001')
+            }
+        },
+        tokensList: getTokensListForNetwork(97)
     }
 }
 
@@ -61,3 +74,7 @@ export const swapHandlers: IMethod = {
 export const provider: JsonRpcProvider = new ethers.providers.WebSocketProvider(env.WS_PROVIDER);
 export const signer = new ethers.Wallet(env.PRIVATE_KEY, provider);
 export const network = networkConfigs[env.CHAIN_ID];
+
+if (!network) throw new Error("Unsupported chain id");
+
+console.log('Targeted tokens ', network.tokensList);

@@ -4,8 +4,8 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "typegen": "typechain --target ethers-v5 --out-dir ./out/typechain './abis/**/*.json'",
-    "prestart": "yarn typegen && tsc",
+    "codegen": "typechain --target ethers-v5 --out-dir ./out/typechain './abis/**/*.json'",
+    "prestart": "yarn codegen && tsc",
     "start": "node -r dotenv/config ./out/index.js dotenv_config_path=./.env"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-import { BigNumberish } from "@ethersproject/bignumber";
+import { BigNumber } from "@ethersproject/bignumber";
 import { IERC20Token } from "./erc20Token";
 
 export interface INetworkInfo {
@@ -8,8 +8,8 @@ export interface INetworkInfo {
     tokensList: string[];
     methodsConfig: {
         swapExactEthForTokens: {
-            minTxEthValue: BigNumberish,
-            maxFREthValue: BigNumberish
+            minTxEthValue: BigNumber,
+            maxFREthValue: BigNumber
         }
     }
 }
