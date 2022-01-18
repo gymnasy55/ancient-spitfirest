@@ -1,6 +1,5 @@
 import { UniswapRouterV2, UniswapRouterV2__factory } from "../../out/typechain";
 import { signer } from "../../constants";
-import { env } from "process";
 import { BigNumber, Overrides, PayableOverrides } from "ethers";
 
 export class SwapV2Service {

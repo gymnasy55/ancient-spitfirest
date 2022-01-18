@@ -1,4 +1,4 @@
-export interface IERC20Token {
+export interface ERC20TokenInfo {
     address: string,
     decimals: number
 }

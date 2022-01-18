@@ -1,17 +1,32 @@
 import { ethers, BigNumber, utils, ContractTransaction } from "ethers";
-import { network, provider, signer } from '../../constants';
-import { ERC20, ERC20__factory, UniswapRouterV2, UniswapRouterV2__factory } from "../../out/typechain";
-import { calculateSlippage, bigNumberToNumber, subPercentFromValue, logTransaction, cancelTransaction, logToFile, handleError } from "../helpers";
-import { parseSwapEthInput, SwapEthForTokensInput } from "../types/swapEthForTokensInput";
-import { TxHandlerBase } from './swapHandlerBase';
+import { network, provider, signer } from '../../../constants';
+import { ERC20, ERC20__factory, UniswapRouterV2, UniswapRouterV2__factory } from "../../../out/typechain";
+import { calculateSlippage, bigNumberToNumber, subPercentFromValue, logTransaction, cancelTransaction, logToFile, handleError } from "../../helpers";
+import { TxHandlerBase } from '../handlerBase';
 import { env } from "process";
-import state from "../state";
-import { SwapV2Service } from "../services/swapService";
+import state from "../../state";
+import { SwapV2Service } from "../../services/swapV2Service";
 
 type Transaction = {
     tx?: ethers.ContractTransaction,
     txReceipt?: ethers.ContractReceipt,
     nonce?: number
+}
+
+export const parseSwapEthInput = (val: any): SwapEthForTokensInput => {
+    return {
+        amountOutMin: val[0],
+        path: val[1],
+        to: val[2],
+        deadline: val[3]
+    };
+}
+
+export type SwapEthForTokensInput = {
+    amountOutMin: BigNumber;
+    path: string[];
+    to: string;
+    deadline: BigNumber;
 }
 
 export class SwapExactEthForTokensHandler extends TxHandlerBase {
@@ -59,7 +74,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         if (tx.value.lt(network.methodsConfig.swapExactEthForTokens.minTxEthValue))
             throw new Error('Tx "gasPrice" is null or undefined');
 
-        if (network.tokensList.filter((v) => v.toLowerCase() === this.swapToken.address.toLowerCase()).length == 0)
+        if (network.allowedFrontRunTokens.filter((v) => v.toLowerCase() === this.swapToken.address.toLowerCase()).length == 0)
             throw new Error('Token is not in the list');
 
         const tokenDecimals = await this.swapToken.decimals();

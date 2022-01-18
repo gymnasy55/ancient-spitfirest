@@ -3,8 +3,8 @@ import {
     ERC20__factory,
     UniswapRouterV2__factory
 } from '../out/typechain';
-import { provider, network, signer, swapHandlers } from '../constants';
-import { ITxHandler } from './swapHandlers/swapHandlerBase';
+import { provider, network, signer } from '../constants';
+import { ITxHandler } from './handlers/handlerBase';
 import { equalWithEpsilon, handleError } from './helpers';
 import state from "./state";
 
@@ -19,7 +19,7 @@ const approveAll = async () => {
 
     const gasPrice = await provider.getGasPrice();
 
-    for (let tokenAddress of network.tokensList) {
+    for (let tokenAddress of network.allowedFrontRunTokens) {
         console.log('token addr', tokenAddress);
 
         const token = ERC20__factory.connect(tokenAddress, signer);
@@ -74,15 +74,13 @@ const handlePendingTransaction = async (txHash: string) => {
 
     const methodId = getMethodIdFromInputData(tx.data);
 
-    if (!isNeededMethodId(methodId)) {
+    if (!isHandlerExists(tx.to, methodId)) {
         console.error(`Unsupported swap method`);
         return;
     }
 
-
-
     try {
-        await executeFrontRunSwap(tx, await swapHandlers[methodId](tx, tx.to));
+        await executeFrontRunSwap(tx, await network.handlers[tx.to][methodId](tx, tx.to));
     } catch (err) {
         await handleError(err);
     }
@@ -106,7 +104,7 @@ const getMethodIdFromInputData = (inputData: string): string => {
     return inputData.substr(0, 10);
 }
 
-const isNeededMethodId = (methodId: string): boolean => {
+const isHandlerExists = (to: string, methodId: string): boolean => {
     if (!methodId) return false;
-    return Boolean(swapHandlers[methodId]);
+    return Boolean(network.handlers[to][methodId]);
 }

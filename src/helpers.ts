@@ -5,6 +5,10 @@ import fs, { unwatchFile } from 'fs';
 import state from "./state";
 import colors from "colors";
 
+export const getTokensListForNetwork = (networkId: number) => {
+    return JSON.parse(fs.readFileSync(`./tokensList/${networkId}.json`).toString('utf8')) as string[];
+}
+
 export const calculateSlippage = (expectedAmount: number, amountOutMin: number): number => {
     const diff = expectedAmount - amountOutMin;
     if (diff == 0) return 0;
