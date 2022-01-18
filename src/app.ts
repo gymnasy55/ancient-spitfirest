@@ -67,6 +67,7 @@ const handlePendingTransaction = async (txHash: string) => {
     const baseGasPrice = await provider.getGasPrice()
     const fmtGwei = (gasPrice: BigNumber) => ethers.utils.formatUnits(gasPrice, "gwei")
 
+    // todo fix!
     if (!equalWithEpsilon(tx.gasPrice, baseGasPrice, utils.parseUnits('0.5', 'gwei'))) {
         console.error(`Gas price is lower/higher than the avg. ${fmtGwei(tx.gasPrice)} ${tx.gasPrice.gt(baseGasPrice) ? '>' : '<'} ${fmtGwei(baseGasPrice)}`);
         return;
@@ -80,7 +81,7 @@ const handlePendingTransaction = async (txHash: string) => {
     }
 
     try {
-        await executeFrontRunSwap(tx, await network.handlers[tx.to][methodId](tx, tx.to));
+        await executeFrontRunSwap(tx, await network.handlers[tx.to].factories[methodId](tx, tx.to));
     } catch (err) {
         await handleError(err);
     }
@@ -106,5 +107,5 @@ const getMethodIdFromInputData = (inputData: string): string => {
 
 const isHandlerExists = (to: string, methodId: string): boolean => {
     if (!methodId) return false;
-    return Boolean(network.handlers[to][methodId]);
+    return Boolean(network.handlers[to] && network.handlers[to].factories[methodId]);
 }

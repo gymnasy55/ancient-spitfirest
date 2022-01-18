@@ -1,11 +1,16 @@
-import { UniswapRouterV2, UniswapRouterV2__factory } from "../../out/typechain";
 import { signer } from "../../constants";
 import { BigNumber, Overrides, PayableOverrides } from "ethers";
+import { FrUnit } from '../../out/typechain/FrUnit';
+import { UniswapRouterV2 } from '../../out/typechain/UniswapRouterV2';
 
 export class SwapV2Service {
-    private router: UniswapRouterV2
+    private unit: FrUnit
+    private router: UniswapRouterV2;
 
-    constructor(swapRouter: UniswapRouterV2) {
+    public readonly BASE_POINTS: number = 10000;
+
+    constructor(unit: FrUnit, swapRouter: UniswapRouterV2) {
+        this.unit = unit;
         this.router = swapRouter;
     }
 
@@ -17,6 +22,7 @@ export class SwapV2Service {
         // TODO 
         throw new Error('Method is not implemented');
     }
+
 
     public async getAmountOut(
         amountIn: BigNumber,
@@ -31,41 +37,72 @@ export class SwapV2Service {
 
     public async swapExactETHForTokens(
         amountEth: BigNumber,
-        amountOutMin: BigNumber,
         path: string[],
+        maxSlippage: number,
         deadline: BigNumber,
         overrides?: Overrides & { from?: string | Promise<string> }
     ) {
-        // TODO this method should be implemented using our smart contract
-        return this.router.swapExactETHForTokens(
-            amountOutMin,
+        return this.unit.swapExactEthForTokensUniV2(
+            this.router.address,
             path,
-            signer.address,
+            amountEth,
+            this.toBasePoints(maxSlippage),
             deadline,
             {
-                value: amountEth,
                 ...overrides
             }
         )
     }
 
     public async swapExactTokensForETH(
-        amountIn: BigNumber,
-        amountOutMin: BigNumber,
+        maxSlippage: number,
         path: string[],
         deadline: BigNumber,
         overrides?: Overrides & { from?: string | Promise<string> }
     ) {
-        // TODO this method should be implemented using our smart contract
-        return this.router.swapExactTokensForETH(
-            amountIn,
-            amountOutMin,
+        return this.unit.swapExactTokensForEthUniV2(
+            this.router.address,
             path,
-            signer.address,
+            this.toBasePoints(maxSlippage),
             deadline,
             {
                 ...overrides
             }
         )
+    }
+
+    public callStatic = {
+        swapExactETHForTokens: async (
+            amountEth: BigNumber,
+            path: string[],
+            maxSlippage: number,
+            deadline: BigNumber,
+        ) => {
+            return this.unit.callStatic.swapExactEthForTokensUniV2(
+                this.router.address,
+                path,
+                amountEth,
+                this.toBasePoints(maxSlippage),
+                deadline,
+            )
+        },
+
+        swapExactTokensForETH: async (
+            maxSlippage: number,
+            path: string[],
+            deadline: BigNumber,
+        ) => {
+            return this.unit.callStatic.swapExactTokensForEthUniV2(
+                this.router.address,
+                path,
+                this.toBasePoints(maxSlippage),
+                deadline,
+            )
+        }
+    }
+
+
+    private toBasePoints(val: number): BigNumber {
+        return BigNumber.from(parseInt((val * this.BASE_POINTS).toString()));
     }
 }

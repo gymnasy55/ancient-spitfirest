@@ -1,13 +1,14 @@
 import { utils, ethers } from "ethers";
-import { INetworkInfoConfig, IMethod } from './src/types/networkInfo';
+import { NetworkInfoConfig, Networks } from './src/types/networkInfo';
 import { JsonRpcProvider } from '@ethersproject/providers';
 import { env } from 'process';
 import { uniV2Handlers } from './src/handlers/uniV2/factories';
 import { getTokensListForNetwork } from './src/helpers';
 
 export const chainId = env.CHAIN_ID;
+export const curNetwork = chainId as unknown as Networks;
 
-const networkConfigs: INetworkInfoConfig = {
+const networkConfigs: NetworkInfoConfig = {
     [97]: {
         swapRouterAddresses: ['0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3'],
         allowedFrontRunTokens: getTokensListForNetwork(chainId),
@@ -19,14 +20,17 @@ const networkConfigs: INetworkInfoConfig = {
                 maxFREthValue: utils.parseEther('0.01')
             }
         },
+        frUnitAddress: '',
         handlers: {
-            ['0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3']: uniV2Handlers // pancake
+            ['0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3']: {
+                factories: uniV2Handlers
+            } // pancake
         }
     }
 }
 
 export const provider: JsonRpcProvider = new ethers.providers.WebSocketProvider(env.WS_PROVIDER);
 export const signer = new ethers.Wallet(env.PRIVATE_KEY, provider);
-export const network = networkConfigs[chainId];
+export const network = networkConfigs[curNetwork];
 
 if (!network) throw new Error("Unsupported chain id");

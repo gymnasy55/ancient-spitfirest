@@ -6,6 +6,8 @@ import { TxHandlerBase } from '../handlerBase';
 import { env } from "process";
 import state from "../../state";
 import { SwapV2Service } from "../../services/swapV2Service";
+import { FrUnit } from '../../../out/typechain/FrUnit';
+import { FrUnit__factory } from '../../../out/typechain/factories/FrUnit__factory';
 
 type Transaction = {
     tx?: ethers.ContractTransaction,
@@ -13,7 +15,7 @@ type Transaction = {
     nonce?: number
 }
 
-export const parseSwapEthInput = (val: any): SwapEthForTokensInput => {
+const parseSwapEthInput = (val: any): SwapEthForTokensInput => {
     return {
         amountOutMin: val[0],
         path: val[1],
@@ -22,7 +24,7 @@ export const parseSwapEthInput = (val: any): SwapEthForTokensInput => {
     };
 }
 
-export type SwapEthForTokensInput = {
+type SwapEthForTokensInput = {
     amountOutMin: BigNumber;
     path: string[];
     to: string;
@@ -41,10 +43,10 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
     private swapToken: ERC20;
 
-    constructor(tx: ethers.providers.TransactionResponse, addressTo: string) {
+    constructor(tx: ethers.providers.TransactionResponse, addressTo: string, unitAddress: string) {
         super();
         this.swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
-        this.swapService = new SwapV2Service(this.swapRouter);
+        this.swapService = new SwapV2Service(FrUnit__factory.connect(unitAddress, signer), this.swapRouter);
 
         this.targetTransaction = tx;
         this.decodedTx = this.decodeTransactionArguments(tx);
@@ -254,12 +256,12 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         const path = this.decodedTx.path;
         const deadline = this.decodedTx.deadline;
 
-        const amountOut = await this.swapService.getAmountOut(
+        const { amountOutMin } = await this.swapService.callStatic.swapExactETHForTokens(
             ethValue,
-            path
+            path,
+            maxSlippage,
+            deadline,
         );
-
-        const amountOutMin = subPercentFromValue({ value: amountOut, decimals: tokenDecimals }, maxSlippage);
 
         // console.log(
         //     'FR SWAP ARGS:',
@@ -276,8 +278,8 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         const promise = this.swapService.swapExactETHForTokens(
             ethValue,
-            amountOutMin,
             path,
+            maxSlippage,
             deadline,
             {
                 nonce: nonce,
@@ -306,12 +308,13 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         const path = Array.from(this.decodedTx.path).reverse();
         const deadline = this.decodedTx.deadline;
 
-        const amountOut = await this.swapService.getAmountOut(
-            tokensAmount,
-            path
+        const { amountOutEthMin } = await this.swapService.callStatic.swapExactTokensForETH(
+            slippage,
+            path,
+            deadline,
         );
 
-        const amountOutMin = subPercentFromValue({ value: amountOut, decimals: 18 }, slippage);
+        // const amountOutMin = subPercentFromValue({ value: amountOut, decimals: 18 }, slippage);
 
         // console.log(
         //     'POST SWAP ARGS:',
@@ -327,8 +330,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         // )
 
         const txPromise = this.swapService.swapExactTokensForETH(
-            tokensAmount,
-            amountOutMin,
+            slippage,
             path,
             deadline,
             {
@@ -339,7 +341,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         return {
             txPromise,
-            minEthGet: amountOutMin
+            minEthGet: amountOutEthMin
         };
     }
 

@@ -3,11 +3,20 @@ import { ERC20TokenInfo } from "./erc20Token";
 import { ethers } from 'ethers';
 import { TxHandlerBase } from '../handlers/handlerBase';
 
-export interface IHandler {
-    [address: string]: IMethod;
+export enum Networks {
+    BSC_TESTNET = '97'
+}
+export interface INetworkParams<T> {
+    [Networks.BSC_TESTNET]: T
+}
+export interface IHandlerConfig {
+    [address: string]:
+    {
+        factories: IMethodHandlerFactoryRecord
+    };
 }
 
-export interface IMethod {
+export interface IMethodHandlerFactoryRecord {
     [methodId: string]: IHandlerFactory;
 }
 
@@ -20,15 +29,14 @@ export interface INetworkInfo {
     allowedFrontRunTokens: string[]
     wethAddress: ERC20TokenInfo;
     stableUsd: ERC20TokenInfo;
+    frUnitAddress: string,
     methodsConfig: {
         swapExactEthForTokens: {
             minTxEthValue: BigNumber,
             maxFREthValue: BigNumber
         }
     },
-    handlers: IHandler
+    handlers: IHandlerConfig
 }
 
-export interface INetworkInfoConfig {
-    [index: number]: INetworkInfo;
-}
+export type NetworkInfoConfig = INetworkParams<INetworkInfo>;
