@@ -1,20 +1,20 @@
 import { ethers } from "ethers";
 import { UniswapRouterV2 } from "../../out/typechain";
 
-export interface ISwapHandler {
-    handleSwap(tx: ethers.providers.TransactionResponse, router: UniswapRouterV2): Promise<void>;
+export interface ITxHandler {
+    handleSwap(): Promise<void>;
     getFunctionSignature(): string;
     getMethodId(): string;
     getFunctionName(): string;
 }
 
-export abstract class SwapHandlerBase implements ISwapHandler {
+export abstract class TxHandlerBase implements ITxHandler {
     public getFunctionName(): string {
         const signature = this.getFunctionSignature()
         return signature.substr(0, signature.indexOf('('),);
     }
 
-    abstract handleSwap(tx: ethers.providers.TransactionResponse, router: UniswapRouterV2): Promise<void>;
+    abstract handleSwap(): Promise<void>;
     abstract getFunctionSignature(): string;
     abstract getMethodId(): string;
 }

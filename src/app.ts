@@ -4,8 +4,8 @@ import {
     UniswapRouterV2__factory
 } from '../out/typechain';
 import { provider, network, signer, swapHandlers } from '../constants';
-import { ISwapHandler } from './swapHandlers/swapHandlerBase';
-import { equalWithEpsilon } from './helpers';
+import { ITxHandler } from './swapHandlers/swapHandlerBase';
+import { equalWithEpsilon, handleError } from './helpers';
 import state from "./state";
 
 export default async () => {
@@ -46,10 +46,16 @@ const handlePendingTransaction = async (txHash: string) => {
         return;
     }
 
+
     const tx = await provider.getTransaction(txHash);
 
     if (!(tx && tx.to && tx.gasPrice && tx.value)) {
         //  console.error(`Invalid tx`);
+        return;
+    }
+
+    if (tx.from.toLowerCase() === signer.address) {
+        console.error(`Self tx found. Skipping`);
         return;
     }
 
@@ -62,7 +68,7 @@ const handlePendingTransaction = async (txHash: string) => {
     const fmtGwei = (gasPrice: BigNumber) => ethers.utils.formatUnits(gasPrice, "gwei")
 
     if (!equalWithEpsilon(tx.gasPrice, baseGasPrice, utils.parseUnits('0.5', 'gwei'))) {
-        console.error(`Gas price is lower than needed. ${fmtGwei(tx.gasPrice)} < ${fmtGwei(baseGasPrice)}`);
+        console.error(`Gas price is lower/higher than the avg. ${fmtGwei(tx.gasPrice)} ${tx.gasPrice.gt(baseGasPrice) ? '>' : '<'} ${fmtGwei(baseGasPrice)}`);
         return;
     }
 
@@ -73,25 +79,26 @@ const handlePendingTransaction = async (txHash: string) => {
         return;
     }
 
+
+
     try {
-        await executeFrontRunSwap(tx, swapHandlers[methodId], tx.to);
+        await executeFrontRunSwap(tx, await swapHandlers[methodId](tx, tx.to));
     } catch (err) {
-        console.error(err);
-        state.resetActiveFrontrun();
+        await handleError(err);
     }
 }
 
-const executeFrontRunSwap = async (tx: ethers.providers.TransactionResponse, handler: ISwapHandler, addressTo: string) => {
+const executeFrontRunSwap = async (tx: ethers.providers.TransactionResponse, handler: ITxHandler) => {
     if (state.hasActiveFrontrun()) {
         console.info('Already performing front run swap');
         return;
     }
 
+    state.frontrunningTransaction = tx;
+
     console.log('!! Front Run Swap !!')
 
-    const swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
-
-    await handler.handleSwap(tx, swapRouter);
+    await handler.handleSwap();
 }
 
 const getMethodIdFromInputData = (inputData: string): string => {

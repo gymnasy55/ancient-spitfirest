@@ -5,7 +5,7 @@ import { SwapExactEthForTokensHandler } from './src/swapHandlers/swapExactEthFor
 import { JsonRpcProvider } from '@ethersproject/providers';
 import { env } from 'process';
 import fs from 'fs';
-import { ISwapHandler } from "./src/swapHandlers/swapHandlerBase";
+import { ITxHandler, TxHandlerBase } from "./src/swapHandlers/swapHandlerBase";
 
 const getTokensListForNetwork = (networkId: number) => {
     return JSON.parse(fs.readFileSync(`./tokensList/${networkId}.json`).toString('utf8')) as string[];
@@ -55,20 +55,24 @@ const networkConfigs: INetworkInfoConfig = {
         methodsConfig: {
             swapExactEthForTokens: {
                 minTxEthValue: utils.parseEther('0.01'),
-                maxFREthValue: utils.parseEther('0.001')
+                maxFREthValue: utils.parseEther('0.01')
             }
         },
         tokensList: getTokensListForNetwork(97)
     }
 }
 
+
 interface IMethod {
-    [methodId: string]: ISwapHandler;
+    [methodId: string]: IHandlerFactory;
 }
 
+interface IHandlerFactory {
+    (tx: ethers.ContractTransaction, addressTo: string): Promise<TxHandlerBase>
+};
+
 export const swapHandlers: IMethod = {
-    //    ['0xfb3bdb41']: 'swapETHForExactTokens(uint256,address[],address,uint256)',
-    ['0x7ff36ab5']: new SwapExactEthForTokensHandler(), //'swapExactETHForTokens(uint256,address[],address,uint256)',
+    ['0x7ff36ab5']: async (tx, to) => (new SwapExactEthForTokensHandler(tx, to)), //'swapExactETHForTokens(uint256,address[],address,uint256)',
 }
 
 export const provider: JsonRpcProvider = new ethers.providers.WebSocketProvider(env.WS_PROVIDER);

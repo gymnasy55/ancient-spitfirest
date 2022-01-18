@@ -1,62 +1,76 @@
 import { ethers, BigNumber, utils, ContractTransaction } from "ethers";
 import { network, provider, signer } from '../../constants';
 import { ERC20, ERC20__factory, UniswapRouterV2, UniswapRouterV2__factory } from "../../out/typechain";
-import { calculateSlippage, bigNumberToNumber, subPercentFromValue, logTransaction, cancelTransaction } from "../helpers";
+import { calculateSlippage, bigNumberToNumber, subPercentFromValue, logTransaction, cancelTransaction, logToFile, handleError } from "../helpers";
 import { parseSwapEthInput, SwapEthForTokensInput } from "../types/swapEthForTokensInput";
-import { SwapHandlerBase } from './swapHandlerBase';
-import fs, { unwatchFile } from 'fs';
+import { TxHandlerBase } from './swapHandlerBase';
 import { env } from "process";
 import state from "../state";
+import { SwapV2Service } from "../services/swapService";
 
 type Transaction = {
     tx?: ethers.ContractTransaction,
     txReceipt?: ethers.ContractReceipt,
+    nonce?: number
 }
 
-export class SwapExactEthForTokensHandler extends SwapHandlerBase {
+export class SwapExactEthForTokensHandler extends TxHandlerBase {
     private frontRunTransaction: Transaction = {}
-    private targetTransaction: Transaction = {}
+    private targetTransaction: ethers.ContractTransaction
     private postFrontRunTransaction: Transaction = {}
+
+    private swapRouter: UniswapRouterV2;
+    private swapService: SwapV2Service;
+
+    private decodedTx: SwapEthForTokensInput;
+
+    private swapToken: ERC20;
+
+    constructor(tx: ethers.providers.TransactionResponse, addressTo: string) {
+        super();
+        this.swapRouter = UniswapRouterV2__factory.connect(addressTo, signer);
+        this.swapService = new SwapV2Service(this.swapRouter);
+
+        this.targetTransaction = tx;
+        this.decodedTx = this.decodeTransactionArguments(tx);
+
+        const tokenAddress = this.decodedTx.path[this.decodedTx.path.length - 1];
+        this.swapToken = ERC20__factory.connect(tokenAddress, signer);
+    }
 
     public getFunctionSignature(): string {
         return 'swapExactETHForTokens(uint256,address[],address,uint256)'
     }
 
-    public getMethodId(): string { return ''; }
+    public getMethodId(): string { /*TODO*/ throw new Error('Method is not implemented') }
 
-    public async handleSwap(tx: ethers.providers.TransactionResponse, router: UniswapRouterV2): Promise<void> {
-        this.frontRunTransaction.tx = tx;
+
+    public async handleSwap(): Promise<void> {
+        const tx = this.targetTransaction;
+
+        if (!tx) throw new Error('Target tx is undefined');
+
+        if (!tx) throw new Error('Target tx is undefined');
 
         if (!tx.to) throw new Error('Tx "to" is null or undefined');
 
         if (!tx.gasPrice) throw new Error('Tx "gasPrice" is null or undefined');
 
-        if (tx.value.lt(network.methodsConfig.swapExactEthForTokens.minTxEthValue)) {
-            console.error('Tx value is lower than minimum required');
-            return;
-        }
+        if (tx.value.lt(network.methodsConfig.swapExactEthForTokens.minTxEthValue))
+            throw new Error('Tx "gasPrice" is null or undefined');
 
-        const decodedTx = this.decodeTransactionArguments(tx);
+        if (network.tokensList.filter((v) => v.toLowerCase() === this.swapToken.address.toLowerCase()).length == 0)
+            throw new Error('Token is not in the list');
 
-        console.log('Decoded TX: ', JSON.stringify(decodedTx));
+        const tokenDecimals = await this.swapToken.decimals();
 
-        if (network.tokensList.filter((v) => v.toLowerCase() === decodedTx.path[decodedTx.path.length - 1].toLowerCase()).length == 0) {
-            console.log('Token is not in the list')
-            return;
-        }
-
-        const tokenAddress = decodedTx.path[decodedTx.path.length - 1];
-        const token = ERC20__factory.connect(tokenAddress, signer);
-        const tokenDecimals = await token.decimals();
-        console.log('Token decimals: ', tokenDecimals);
-
-        const amountOut = await router.getAmountsOut(
+        const amountOut = await this.swapService.getAmountOut(
             tx.value,
-            decodedTx.path
+            this.decodedTx.path
         );
 
-        const amountOutFormatted = bigNumberToNumber(amountOut[amountOut.length - 1], tokenDecimals);
-        const amountOutArgsFormatted = bigNumberToNumber(decodedTx.amountOutMin, tokenDecimals);
+        const amountOutFormatted = bigNumberToNumber(amountOut, tokenDecimals);
+        const amountOutArgsFormatted = bigNumberToNumber(this.decodedTx.amountOutMin, tokenDecimals);
 
         console.log(
             '\namount out: ', amountOutFormatted,
@@ -81,21 +95,21 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
             return;
         }
 
-        const frontrunSwapNonce = await provider.getTransactionCount(signer.address);
+        this.frontRunTransaction.nonce = await provider.getTransactionCount(signer.address);;
 
         const { minTokensGet, txPromise: frontrunTxPromise } = await this.performFrontrunSwap(
-            router,
-            frontrunSwapNonce,
-            tx.gasPrice.add(utils.parseUnits('3', 'gwei')),
+            this.frontRunTransaction.nonce,
             tokenDecimals,
-            decodedTx.path,
-            decodedTx.deadline,
             env.MAX_FRONTRUN_SLIPPAGE_PERCENTAGE,
             ethToSend);
 
-        this.frontRunTransaction.tx = (await frontrunTxPromise);
-
-        logTransaction(this.frontRunTransaction.tx);
+        try {
+            this.frontRunTransaction.tx = (await frontrunTxPromise);
+            logTransaction(this.frontRunTransaction.tx);
+        } catch (err) {
+            this.handleTxError(err);
+            return;
+        }
 
         this.frontRunTransaction.tx.wait().then(txReceipt => {
             logTransaction(txReceipt, 'Frontrun swap completed!');
@@ -108,36 +122,33 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
 
         tx.wait().then(txReceipt => {
             logTransaction(txReceipt, 'Frontrun-ed tx is completed!');
-            this.targetTransaction.txReceipt = txReceipt;
         }).catch(
             (err) => {
                 this.handleTxError(err);
             }
         );
 
-        const postFrontrunSwapNonce = frontrunSwapNonce + 1;
+        this.postFrontRunTransaction.nonce = this.frontRunTransaction.nonce + 1;
 
-        const { minEthGet, txPromise: postFrontrunTxPromise } = await this.performPostSwap(
-            router,
-            postFrontrunSwapNonce,
-            tx.gasPrice.sub(1),
+        const { txPromise: postFrontrunTxPromise } = await this.performPostSwap(
+            this.postFrontRunTransaction.nonce,
             minTokensGet,
-            // reserve() mutates original array!
-            Array.from(decodedTx.path).reverse(),
-            decodedTx.deadline,
             env.MAX_FRONTRUN_SLIPPAGE_PERCENTAGE,
         );
 
-        this.postFrontRunTransaction.tx = await postFrontrunTxPromise;
-
-        logTransaction(this.postFrontRunTransaction.tx);
+        try {
+            this.postFrontRunTransaction.tx = await postFrontrunTxPromise;
+            logTransaction(this.postFrontRunTransaction.tx);
+        } catch (err) {
+            this.handleTxError(err);
+            return;
+        }
 
         this.postFrontRunTransaction.tx.wait()
             .then(txReceipt => {
                 logTransaction(txReceipt, 'post frontrun tx is completed');
                 this.postFrontRunTransaction.txReceipt = txReceipt;
                 this.handleSuccessFrontrun(
-                    tokenAddress,
                     balanceBefore,
                     ethToSend,
                     slippage,
@@ -151,26 +162,38 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
 
     private async handleTxError(error: any) {
         const cancelTxIfNotMinedYet = async (tx: Transaction) => {
-            if (tx.tx) {
-                if (!tx.txReceipt) {
-                    (await cancelTransaction(tx.tx)).wait().then(v => {
-                        console.log('Tx canceled');
-                    });
-                } else {
-                    console.log('Cannot cancel, because tx is already mined');
-                }
-            } else {
+            if (!tx.tx) {
                 console.log('Targeted transaction is not event exists');
+                return;
             }
+
+            if (!tx.nonce) {
+                console.log('Cannot cancel, nonce is note set');
+                return;
+            }
+
+            if (tx.txReceipt) {
+                console.log('Cannot cancel, because tx is already mined');
+                return;
+            }
+
+            (await cancelTransaction(tx.nonce, tx.tx)).wait().then(v => {
+                console.log('Tx is canceled');
+            });
         }
 
-        cancelTxIfNotMinedYet(this.frontRunTransaction);
-        cancelTxIfNotMinedYet(this.postFrontRunTransaction);
-        state.resetActiveFrontrun();
+        const p1 = cancelTxIfNotMinedYet(this.frontRunTransaction);
+        const p2 = cancelTxIfNotMinedYet(this.postFrontRunTransaction);
+
+        try {
+            await Promise.all([p1, p2]);
+        }
+        finally {
+            await handleError(error);
+        }
     }
 
     private async handleSuccessFrontrun(
-        tokenAddress: string,
         ethBalanceBefore: BigNumber,
         ethToSend: BigNumber,
         slippage: number,
@@ -178,35 +201,32 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
         const ethBalanceAfter = await provider.getBalance(signer.address);
 
         await this.logSuccess(
-            tokenAddress,
             ethToSend,
             slippage,
             ethBalanceAfter.sub(ethBalanceBefore)
         );
+
+        state.resetActiveFrontrun();
     }
 
     private async logSuccess(
-        token: string,
         ethToSend: BigNumber,
         slippage: number,
-        ethGet: BigNumber
+        ethProfit: BigNumber
     ) {
         await logToFile(
+            'swapExactETHForTokens',
             `--------------------\n` +
             `[${new Date().toDateString()}]\nEth to perform frontrun swap: ${bigNumberToNumber(ethToSend, 18).toFixed(8)} | Slippage: ${slippage}\n` +
-            `Token address: ${token}\n` +
-            `Eth received after post frontrun swap: ${bigNumberToNumber(ethGet, 18).toFixed(8)} | Profit: ${bigNumberToNumber(ethGet.sub(ethToSend), 18).toFixed(8)}\n` +
+            `Token address: ${this.swapToken.address}\n` +
+            `Profit including fees: ${bigNumberToNumber(ethProfit, 18).toFixed(8)}\n` +
             `--------------------\n`
         )
     }
 
     private async performFrontrunSwap(
-        router: UniswapRouterV2,
         nonce: number,
-        gasPrice: BigNumber,
         tokenDecimals: number,
-        path: string[],
-        deadline: BigNumber,
         maxSlippage: number,
         ethValue: BigNumber): Promise<{
             txPromise: Promise<ContractTransaction>
@@ -215,35 +235,36 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
 
         console.log('!FR SWAP!');
 
-        const amountOut = await router.getAmountsOut(
+        const gasPrice = this.targetTransaction.gasPrice?.add(utils.parseUnits('3', 'gwei')) ?? 0;
+        const path = this.decodedTx.path;
+        const deadline = this.decodedTx.deadline;
+
+        const amountOut = await this.swapService.getAmountOut(
             ethValue,
             path
         );
 
-        const tokensGet = amountOut[amountOut.length - 1];
+        const amountOutMin = subPercentFromValue({ value: amountOut, decimals: tokenDecimals }, maxSlippage);
 
-        const minTokensGet = subPercentFromValue({ value: tokensGet, decimals: tokenDecimals }, maxSlippage);
+        // console.log(
+        //     'FR SWAP ARGS:',
+        //     amountOutMin.toString(),
+        //     path,
+        //     await signer.getAddress(),
+        //     deadline.toString(),
+        //     {
+        //         value: ethValue.toString(),
+        //         nonce: nonce,
+        //         gasPrice: gasPrice.toString()
+        //     }
+        // )
 
-        console.log(
-            'FR SWAP ARGS:',
-            minTokensGet.toString(),
+        const promise = this.swapService.swapExactETHForTokens(
+            ethValue,
+            amountOutMin,
             path,
-            await signer.getAddress(),
-            deadline.toString(),
-            {
-                value: ethValue.toString(),
-                nonce: nonce,
-                gasPrice: gasPrice.toString()
-            }
-        )
-
-        const promise = router.swapExactETHForTokens(
-            minTokensGet,
-            path,
-            await signer.getAddress(),
             deadline,
             {
-                value: ethValue,
                 nonce: nonce,
                 gasPrice: gasPrice
             }
@@ -251,54 +272,49 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
 
         return {
             txPromise: promise,
-            minTokensGet: minTokensGet
+            minTokensGet: amountOutMin
         };
     }
 
     private async performPostSwap(
-        router: UniswapRouterV2,
         nonce: number,
-        gasPrice: BigNumber,
         tokensAmount: BigNumber,
-        path: string[],
-        deadline: BigNumber,
-        maxSlippage: number,
+        slippage: number,
     ): Promise<{
         txPromise: Promise<ContractTransaction>
         minEthGet: BigNumber
     }> {
         console.log('!POST SWAP!');
 
-        const amountOut = await router.getAmountsOut(
+        const gasPrice = this.targetTransaction.gasPrice?.sub(1) ?? 0;
+
+        const path = Array.from(this.decodedTx.path).reverse();
+        const deadline = this.decodedTx.deadline;
+
+        const amountOut = await this.swapService.getAmountOut(
             tokensAmount,
             path
         );
 
-        const ethGet = amountOut[amountOut.length - 1];
+        const amountOutMin = subPercentFromValue({ value: amountOut, decimals: 18 }, slippage);
 
-        const minEthGet = subPercentFromValue({ value: ethGet, decimals: 18 }, maxSlippage);
+        // console.log(
+        //     'POST SWAP ARGS:',
+        //     tokensAmount,
+        //     amountOutMin.toString(),
+        //     path,
+        //     signer.address,
+        //     deadline,
+        //     {
+        //         nonce: nonce,
+        //         gasPrice: gasPrice
+        //     }
+        // )
 
-        console.log(
-            'POST SWAP ARGS:',
+        const txPromise = this.swapService.swapExactTokensForETH(
             tokensAmount,
-            minEthGet.toString(),
+            amountOutMin,
             path,
-            signer.address,
-            deadline,
-            {
-                nonce: nonce,
-                gasPrice: gasPrice
-            }
-        )
-
-        const token = ERC20__factory.connect(path[0], signer);
-        console.log('allowance:', await token.allowance(signer.address, router.address));
-
-        const txPromise = router.swapExactTokensForETH(
-            tokensAmount,
-            minEthGet,
-            path,
-            signer.address,
             deadline,
             {
                 nonce: nonce,
@@ -308,22 +324,11 @@ export class SwapExactEthForTokensHandler extends SwapHandlerBase {
 
         return {
             txPromise,
-            minEthGet: minEthGet
+            minEthGet: amountOutMin
         };
     }
 
     private decodeTransactionArguments(tx: ethers.providers.TransactionResponse): SwapEthForTokensInput {
         return parseSwapEthInput(UniswapRouterV2__factory.createInterface().decodeFunctionData(this.getFunctionName(), tx.data));
     }
-}
-
-const logToFile = async (message: string) => {
-    const filePath = './logs/';
-
-    if (!fs.existsSync(filePath))
-        fs.mkdirSync(filePath);
-
-    var stream = fs.createWriteStream(filePath + "swapExactEthForTokens.log", { flags: 'a+' });
-    stream.write(message);
-    stream.end();
 }

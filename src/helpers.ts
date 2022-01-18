@@ -1,6 +1,9 @@
 import { BigNumber } from "@ethersproject/bignumber";
-import { utils, ethers, ContractTransaction, ContractReceipt } from "ethers";
+import { utils, ethers, ContractTransaction, ContractReceipt, ContractFactory } from "ethers";
 import { signer } from "../constants";
+import fs, { unwatchFile } from 'fs';
+import state from "./state";
+import colors from "colors";
 
 export const calculateSlippage = (expectedAmount: number, amountOutMin: number): number => {
     const diff = expectedAmount - amountOutMin;
@@ -20,11 +23,11 @@ export const bigNumberToNumber = (value: BigNumber, decimals: number = 18): numb
 
 export const equalWithEpsilon = (a: BigNumber, b: BigNumber, eps: BigNumber): boolean => a.sub(b).abs().lte(eps);
 
-export const cancelTransaction = async (tx: ethers.ContractTransaction): Promise<ethers.ContractTransaction> => {
+export const cancelTransaction = async (nonce: number, tx: ethers.ContractTransaction): Promise<ethers.ContractTransaction> => {
     return await signer.sendTransaction({
         to: signer.address,
-        gasPrice: tx.gasPrice?.add(utils.parseUnits('1', 'gwei')),
-        nonce: tx.nonce,
+        gasPrice: tx.gasPrice?.add(utils.parseUnits('2', 'gwei')),
+        nonce: nonce,
         value: BigNumber.from(0)
     })
 }
@@ -35,5 +38,25 @@ export const logTransaction = async (tx: ContractTransaction | ContractReceipt, 
     if ((tx as ContractTransaction).hash) txHash = (tx as ethers.ContractTransaction).hash;
     else txHash = (tx as ethers.ContractReceipt).transactionHash;
 
-    console.log(msg ?? '', 'Tx hash:' + txHash);
+    console.log(msg ?? '', 'Tx hash: ' + txHash);
+}
+
+export const logToFile = async (fileName: string, message: string) => {
+    const filePath = './logs/';
+
+    if (!fs.existsSync(filePath))
+        fs.mkdirSync(filePath);
+
+    var stream = fs.createWriteStream(filePath + `${fileName}.log`, { flags: 'a+' });
+    stream.write(message);
+    stream.end();
+}
+
+export const handleError = async (error?: any) => {
+    let errMsg;
+    if (error && error instanceof Error) errMsg = error.message;
+    else errMsg = JSON.stringify(error)
+
+    await logToFile('errors', `[${new Date().toDateString()}]\n` + errMsg + '\n');
+    state.resetActiveFrontrun();
 }
