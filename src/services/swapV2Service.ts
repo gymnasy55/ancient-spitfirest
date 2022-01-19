@@ -4,13 +4,18 @@ import { FrUnit } from '../../out/typechain/FrUnit';
 import { UniswapRouterV2 } from '../../out/typechain/UniswapRouterV2';
 
 export class SwapV2Service {
-    private unit: FrUnit
+    private _unit: FrUnit;
+
+    public get unit(): FrUnit {
+        return this._unit;
+    }
+
     private router: UniswapRouterV2;
 
     public readonly BASE_POINTS: number = 10000;
 
     constructor(unit: FrUnit, swapRouter: UniswapRouterV2) {
-        this.unit = unit;
+        this._unit = unit;
         this.router = swapRouter;
     }
 
@@ -26,13 +31,15 @@ export class SwapV2Service {
 
     public async getAmountOut(
         amountIn: BigNumber,
+        slippage: number,
         path: string[]
-    ): Promise<BigNumber> {
-        // TODO
-        return (await this.router.getAmountsOut(
+    ) {
+        return (await this.unit.getAmountOutWithSlippage(
+            this.router.address,
             amountIn,
+            this.toBasePoints(slippage),
             path
-        ))[path.length - 1];
+        ));
     }
 
     public async swapExactETHForTokens(

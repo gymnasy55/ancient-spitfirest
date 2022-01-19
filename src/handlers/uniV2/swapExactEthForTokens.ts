@@ -1,5 +1,5 @@
 import { ethers, BigNumber, utils, ContractTransaction } from "ethers";
-import { network, provider, signer } from '../../../constants';
+import { network, provider, signer, nonceManager } from '../../../constants';
 import { ERC20, ERC20__factory, UniswapRouterV2, UniswapRouterV2__factory } from "../../../out/typechain";
 import { calculateSlippage, bigNumberToNumber, subPercentFromValue, logTransaction, cancelTransaction, logToFile, handleError } from "../../helpers";
 import { TxHandlerBase } from '../handlerBase';
@@ -81,8 +81,9 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         const tokenDecimals = await this.swapToken.decimals();
 
-        const amountOut = await this.swapService.getAmountOut(
+        const { amountOut } = await this.swapService.getAmountOut(
             tx.value,
+            0,
             this.decodedTx.path
         );
 
@@ -103,7 +104,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             console.log('slippage is lower than minimal needed');
             return;
         }
-        const balanceBefore = await provider.getBalance(signer.address);
+        const balanceBefore = await provider.getBalance(this.swapService.unit.address);
 
         const ethToSend = network.methodsConfig.swapExactEthForTokens.maxFREthValue;
 
@@ -112,9 +113,9 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             return;
         }
 
-        this.frontRunTransaction.nonce = await provider.getTransactionCount(signer.address);;
+        this.frontRunTransaction.nonce = await nonceManager.getNonce();
 
-        const { minTokensGet, txPromise: frontrunTxPromise } = await this.performFrontrunSwap(
+        const { txPromise: frontrunTxPromise } = await this.performFrontrunSwap(
             this.frontRunTransaction.nonce,
             tokenDecimals,
             env.MAX_FRONTRUN_SLIPPAGE_PERCENTAGE,
@@ -145,11 +146,10 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             }
         );
 
-        this.postFrontRunTransaction.nonce = this.frontRunTransaction.nonce + 1;
+        this.postFrontRunTransaction.nonce = await nonceManager.getNonce();
 
         const { txPromise: postFrontrunTxPromise } = await this.performPostSwap(
             this.postFrontRunTransaction.nonce,
-            minTokensGet,
             env.MAX_FRONTRUN_SLIPPAGE_PERCENTAGE,
         );
 
@@ -215,7 +215,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         ethToSend: BigNumber,
         slippage: number,
     ) {
-        const ethBalanceAfter = await provider.getBalance(signer.address);
+        const ethBalanceAfter = await provider.getBalance(this.swapService.unit.address);
 
         await this.logSuccess(
             ethToSend,
@@ -295,11 +295,9 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
     private async performPostSwap(
         nonce: number,
-        tokensAmount: BigNumber,
         slippage: number,
     ): Promise<{
         txPromise: Promise<ContractTransaction>
-        minEthGet: BigNumber
     }> {
         console.log('!POST SWAP!');
 
@@ -307,12 +305,6 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         const path = Array.from(this.decodedTx.path).reverse();
         const deadline = this.decodedTx.deadline;
-
-        const { amountOutEthMin } = await this.swapService.callStatic.swapExactTokensForETH(
-            slippage,
-            path,
-            deadline,
-        );
 
         // const amountOutMin = subPercentFromValue({ value: amountOut, decimals: 18 }, slippage);
 
@@ -335,13 +327,13 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             deadline,
             {
                 nonce: nonce,
-                gasPrice: gasPrice
+                gasPrice: gasPrice,
+                gasLimit: 1_000_000
             }
         )
 
         return {
             txPromise,
-            minEthGet: amountOutEthMin
         };
     }
 

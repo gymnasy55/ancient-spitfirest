@@ -5,8 +5,9 @@ import {
 } from '../out/typechain';
 import { provider, network, signer } from '../constants';
 import { ITxHandler } from './handlers/handlerBase';
-import { equalWithEpsilon, handleError } from './helpers';
+import { equalWithEpsilon, handleError, logTransaction } from './helpers';
 import state from "./state";
+import { FrUnit__factory } from '../out/typechain/factories/FrUnit__factory';
 
 export default async () => {
     await approveAll();
@@ -19,6 +20,8 @@ const approveAll = async () => {
 
     const gasPrice = await provider.getGasPrice();
 
+    const frUnit = FrUnit__factory.connect(network.frUnitAddress, signer);
+
     for (let tokenAddress of network.allowedFrontRunTokens) {
         console.log('token addr', tokenAddress);
 
@@ -27,9 +30,10 @@ const approveAll = async () => {
         for (let routerAddress of network.swapRouterAddresses) {
             console.log('router addr', routerAddress);
 
-            console.log(await token.allowance(signer.address, routerAddress));
-            if (!(await token.allowance(signer.address, routerAddress)).eq(ethers.constants.MaxUint256)) {
-                await token.approve(routerAddress, ethers.constants.MaxUint256, { gasPrice: gasPrice });
+            console.log('current allowance: ', await token.allowance(network.frUnitAddress, routerAddress));
+
+            if (!(await token.allowance(network.frUnitAddress, routerAddress)).eq(ethers.constants.MaxUint256)) {
+                logTransaction(await (await frUnit.approve(tokenAddress, routerAddress, ethers.constants.MaxUint256, { gasPrice: gasPrice })).wait());
             }
         }
     }
