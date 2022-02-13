@@ -1,23 +1,26 @@
 import { BigNumber } from "@ethersproject/bignumber";
-import { utils, ethers, ContractTransaction, ContractReceipt, ContractFactory } from "ethers";
+import { utils, ethers, ContractTransaction, ContractReceipt } from "ethers";
 import { signer } from "../constants";
-import fs, { unwatchFile } from 'fs';
+import fs from 'fs';
 import state from "./state";
-import colors from "colors";
+import { ERC20TokenInfo } from './types/erc20Token';
+
 
 export const getTokensListForNetwork = (networkId: number) => {
-    return JSON.parse(fs.readFileSync(`./tokensList/${networkId}.json`).toString('utf8')) as string[];
+    return (JSON.parse(fs.readFileSync(`./tokensList/${networkId}.json`).toString('utf8')) as ERC20TokenInfo[])
+        .reduce<{ [key: string]: { decimals: number } }>((prev, cur) => {
+            prev[cur.address] = { decimals: cur.decimals };
+            return prev;
+        }, {});
 }
 
-export const calculateSlippage = (expectedAmount: number, amountOutMin: number): number => {
-    const diff = expectedAmount - amountOutMin;
-    if (diff == 0) return 0;
-    return diff / ((expectedAmount + amountOutMin) / 2) * 100;
+export const calculateSlippage = (amountOut: number, amountOutMin: number): number => {
+    return (amountOut / amountOutMin) * 100 - 100;
 }
 
 export const subPercentFromValue = (valBN: { value: BigNumber, decimals: number }, percentage: number) => {
     const valueFormatted = parseFloat(utils.formatUnits(valBN.value, valBN.decimals));
-    const res = (valueFormatted - valueFormatted / 100 * percentage).toFixed(valBN.decimals);
+    const res = (valueFormatted - (valueFormatted / 100) * percentage).toFixed(valBN.decimals);
     return utils.parseUnits(res.toString(), valBN.decimals);
 }
 
@@ -62,5 +65,6 @@ export const handleError = async (error?: any) => {
     else errMsg = JSON.stringify(error)
 
     await logToFile('errors', `[${new Date().toDateString()}]\n` + errMsg + '\n');
+
     state.resetActiveFrontrun();
 }

@@ -2,6 +2,7 @@ import { signer } from "../../constants";
 import { BigNumber, Overrides, PayableOverrides } from "ethers";
 import { FrUnit } from '../../out/typechain/FrUnit';
 import { UniswapRouterV2 } from '../../out/typechain/UniswapRouterV2';
+import bn from "bignumber.js";
 
 export class SwapV2Service {
     private _unit: FrUnit;
@@ -19,33 +20,98 @@ export class SwapV2Service {
         this.router = swapRouter;
     }
 
-    // this method should return a price impact of a swap in %
-    public async getPriceImpact(
-        amountIn: BigNumber,
-        path: string[]
-    ): Promise<number> {
-        // TODO 
-        throw new Error('Method is not implemented');
-    }
-
-
-    public async getAmountOut(
-        amountIn: BigNumber,
-        slippage: number,
+    public async getAmountsIn(
+        amountOut: BigNumber,
         path: string[]
     ) {
-        return (await this.unit.getAmountOutWithSlippage(
-            this.router.address,
-            amountIn,
-            this.toBasePoints(slippage),
+        return (await this.router.getAmountsOut(
+            amountOut,
             path
         ));
+    }
+
+    public async getAmountsOut(
+        amountIn: BigNumber,
+        path: string[]
+    ) {
+        return (await this.router.getAmountsOut(
+            amountIn,
+            path
+        ));
+    }
+
+    public async calculateMaxETHToSend(
+        amountOutMin: BigNumber,
+        amountsOut: BigNumber[],
+        path: string[]
+    ): Promise<BigNumber> {
+        if (path.length != amountsOut.length) throw new Error("Path and amountsOut lengths are not equal");
+
+        const tokenA = path[path.length - 2];
+        const tokenB = path[path.length - 1];
+
+        console.log('tokens', { tokenA, tokenB });
+
+        const { reserveA, reserveB } = await this.unit.callStatic.getReservesV2(this.router.address, tokenA, tokenB);
+
+        console.log('reserves', { reserveA, reserveB });
+
+        const amountIn = amountsOut[path.length - 2];
+
+        console.log('amount in', { amountIn });
+
+        console.time('CALC')
+        const res = this._calculateMaxTokenToSend(
+            new bn(amountIn.toString()),
+            new bn(amountOutMin.toString()),
+            new bn(reserveA.toString()),
+            new bn(reserveB.toString())
+        )
+        console.timeEnd('CALC')
+
+
+        console.log('res', { res });
+
+        return (
+            path.length > 2 ?
+                (await this.getAmountsIn(BigNumber.from(res), path.slice(0, -1)))[0] :
+                BigNumber.from(res));
+    }
+
+    private _calculateMaxTokenToSend(
+        amountIn: bn,
+        amountOutMin: bn,
+        reserveA: bn,
+        reserveB: bn
+    ) {
+        console.log('Input Params: ', {
+            in: amountIn.toFixed(),
+            outMin: amountOutMin.toFixed(),
+            reserveA: reserveA.toFixed(),
+            reserveB: reserveB.toFixed(),
+        })
+
+        const a = amountIn;
+        const b = amountIn.multipliedBy(amountOutMin).minus(amountIn.multipliedBy(reserveB).multipliedBy(2));
+        const c = amountIn.multipliedBy(reserveB).multipliedBy(reserveB.minus(amountOutMin)).minus(reserveA.multipliedBy(reserveB).multipliedBy(amountOutMin));
+
+        const desc = b.multipliedBy(b).minus(a.multipliedBy(c).multipliedBy(4));
+
+        console.log('equation params', { a: a.toFixed(), b: b.toFixed(), c: c.toFixed(), desc: desc.toFixed() });
+
+        const y = b.multipliedBy(-1).minus(desc.sqrt()).div(a.multipliedBy(2));
+        const x = reserveA.multipliedBy(reserveB).div(reserveB.minus(y)).minus(reserveA);
+
+        console.log('y', y.toFixed(0));
+        console.log('x', x.toFixed(0));
+
+        return x.toFixed(0);
     }
 
     public async swapExactETHForTokens(
         amountEth: BigNumber,
         path: string[],
-        maxSlippage: number,
+        amountOutMin: BigNumber,
         deadline: BigNumber,
         overrides?: Overrides & { from?: string | Promise<string> }
     ) {
@@ -53,7 +119,7 @@ export class SwapV2Service {
             this.router.address,
             path,
             amountEth,
-            this.toBasePoints(maxSlippage),
+            amountOutMin,
             deadline,
             {
                 ...overrides

@@ -15,4 +15,22 @@ const state = {
     }
 } as AppState;
 
+
+export const frontrunStarted = () => {
+    // TODO
+}
+
+export const frontrunFinishedWithError = () => {
+    frontrunFinished();
+}
+
+export const frontrunFinishedSuccessfully = () => {
+    frontrunFinished();
+}
+
+
+const frontrunFinished = () => {
+
+}
+
 export default state

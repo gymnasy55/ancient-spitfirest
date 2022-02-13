@@ -1,3 +1,6 @@
 [
-    "0x6326af92A030D6BfDCE0E1d3a4725733564AD58b"
+    {
+        "address": "0x6326af92A030D6BfDCE0E1d3a4725733564AD58b",
+        "decimals": 18
+    }
 ]

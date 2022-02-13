@@ -10,8 +10,7 @@ export interface INetworkParams<T> {
     [Networks.BSC_TESTNET]: T
 }
 export interface IHandlerConfig {
-    [address: string]:
-    {
+    [address: string]: {
         factories: IMethodHandlerFactoryRecord
     };
 }
@@ -26,7 +25,7 @@ export interface IHandlerFactory {
 
 export interface INetworkInfo {
     swapRouterAddresses: string[],
-    allowedFrontRunTokens: string[]
+    allowedFrontRunTokens: Record<string, { decimals: number }>
     wethAddress: ERC20TokenInfo;
     stableUsd: ERC20TokenInfo;
     frUnitAddress: string,

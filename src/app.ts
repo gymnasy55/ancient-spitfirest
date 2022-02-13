@@ -1,44 +1,12 @@
-import { BigNumber, ethers, providers, utils } from 'ethers';
-import {
-    ERC20__factory,
-    UniswapRouterV2__factory
-} from '../out/typechain';
+import { BigNumber,  utils, providers } from 'ethers';
 import { provider, network, signer } from '../constants';
 import { ITxHandler } from './handlers/handlerBase';
 import { equalWithEpsilon, handleError, logTransaction } from './helpers';
 import state from "./state";
-import { FrUnit__factory } from '../out/typechain/factories/FrUnit__factory';
 
 export default async () => {
-    await approveAll();
     console.log('Started FrontRunning')
     provider.on('pending', handlePendingTransaction);
-}
-
-const approveAll = async () => {
-    console.log('Start approving all!')
-
-    const gasPrice = await provider.getGasPrice();
-
-    const frUnit = FrUnit__factory.connect(network.frUnitAddress, signer);
-
-    for (let tokenAddress of network.allowedFrontRunTokens) {
-        console.log('token addr', tokenAddress);
-
-        const token = ERC20__factory.connect(tokenAddress, signer);
-
-        for (let routerAddress of network.swapRouterAddresses) {
-            console.log('router addr', routerAddress);
-
-            console.log('current allowance: ', await token.allowance(network.frUnitAddress, routerAddress));
-
-            if (!(await token.allowance(network.frUnitAddress, routerAddress)).eq(ethers.constants.MaxUint256)) {
-                logTransaction(await (await frUnit.approve(tokenAddress, routerAddress, ethers.constants.MaxUint256, { gasPrice: gasPrice })).wait());
-            }
-        }
-    }
-
-    console.log('APPROVED!');
 }
 
 const handlePendingTransaction = async (txHash: string) => {
@@ -69,7 +37,7 @@ const handlePendingTransaction = async (txHash: string) => {
     }
 
     const baseGasPrice = await provider.getGasPrice()
-    const fmtGwei = (gasPrice: BigNumber) => ethers.utils.formatUnits(gasPrice, "gwei")
+    const fmtGwei = (gasPrice: BigNumber) => utils.formatUnits(gasPrice, "gwei")
 
     // todo fix!
     if (!equalWithEpsilon(tx.gasPrice, baseGasPrice, utils.parseUnits('0.5', 'gwei'))) {
@@ -91,7 +59,7 @@ const handlePendingTransaction = async (txHash: string) => {
     }
 }
 
-const executeFrontRunSwap = async (tx: ethers.providers.TransactionResponse, handler: ITxHandler) => {
+const executeFrontRunSwap = async (tx: providers.TransactionResponse, handler: ITxHandler) => {
     if (state.hasActiveFrontrun()) {
         console.info('Already performing front run swap');
         return;

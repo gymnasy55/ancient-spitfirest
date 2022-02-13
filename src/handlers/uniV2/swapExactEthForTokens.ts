@@ -76,27 +76,29 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         if (tx.value.lt(network.methodsConfig.swapExactEthForTokens.minTxEthValue))
             throw new Error('Tx "gasPrice" is null or undefined');
 
-        if (network.allowedFrontRunTokens.filter((v) => v.toLowerCase() === this.swapToken.address.toLowerCase()).length == 0)
+        const tokenInfo = network.allowedFrontRunTokens[this.swapToken.address];
+
+        if (!tokenInfo)
             throw new Error('Token is not in the list');
 
-        const tokenDecimals = await this.swapToken.decimals();
+        const tokenDecimals = tokenInfo.decimals;
 
-        const { amountOut } = await this.swapService.getAmountOut(
+        const amountsOut = await this.swapService.getAmountsOut(
             tx.value,
-            0,
             this.decodedTx.path
         );
 
-        const amountOutFormatted = bigNumberToNumber(amountOut, tokenDecimals);
-        const amountOutArgsFormatted = bigNumberToNumber(this.decodedTx.amountOutMin, tokenDecimals);
+        const amountOutFormatted = bigNumberToNumber(amountsOut[amountsOut.length - 1], tokenDecimals);
+        const amountOutMinFormatted = bigNumberToNumber(this.decodedTx.amountOutMin, tokenDecimals);
 
         console.log(
+            '\namount in', bigNumberToNumber(tx.value),
             '\namount out: ', amountOutFormatted,
-            '\namount out min:', amountOutArgsFormatted);
+            '\namount out min:', amountOutMinFormatted);
 
         const slippage = calculateSlippage(
             amountOutFormatted,
-            amountOutArgsFormatted);
+            amountOutMinFormatted);
 
         console.log('slippage: ', slippage, '%');
 
@@ -105,13 +107,22 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             return;
         }
         const balanceBefore = await provider.getBalance(this.swapService.unit.address);
+        console.log('BALANCE BEFORE: ', utils.formatEther(balanceBefore));
 
-        const ethToSend = network.methodsConfig.swapExactEthForTokens.maxFREthValue;
+        console.time('START calculateMaxETHToSend')
+        const maxEthToSend = await this.swapService.calculateMaxETHToSend(this.decodedTx.amountOutMin, amountsOut, this.decodedTx.path);
+        console.timeEnd('START calculateMaxETHToSend')
 
-        if (balanceBefore.lt(ethToSend)) {
-            console.error('INSUFFICIENT BALANCE!');
-            return;
-        }
+        let ethToSend = maxEthToSend.mul(95).div(100);
+        ethToSend = ethToSend.gt(balanceBefore) ? balanceBefore : ethToSend;
+
+        console.log('maxEthToSend', ethers.utils.formatEther(maxEthToSend));
+        console.log('Eth to send', ethers.utils.formatEther(ethToSend));
+
+        // if (balanceBefore.lt(ethToSend)) {
+        //     console.error('INSUFFICIENT BALANCE!');
+        //     return;
+        // }
 
         this.frontRunTransaction.nonce = await nonceManager.getNonce();
 
@@ -123,7 +134,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         try {
             this.frontRunTransaction.tx = (await frontrunTxPromise);
-            logTransaction(this.frontRunTransaction.tx);
+            logTransaction(this.frontRunTransaction.tx, 'Frontrun swap');
         } catch (err) {
             this.handleTxError(err);
             return;
@@ -134,12 +145,17 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             this.frontRunTransaction.txReceipt = txReceipt;
         }).catch(
             (err) => {
+                // TODO somehow check that tx is mined or not
                 this.handleTxError(err);
             }
         );;
 
         tx.wait().then(txReceipt => {
             logTransaction(txReceipt, 'Frontrun-ed tx is completed!');
+            if (!this.frontRunTransaction.txReceipt || !this.frontRunTransaction.tx) {
+                throw new Error('Frontrun-ed is completed but pre-frontrun transaction is not yet mined/sended');
+            }
+
         }).catch(
             (err) => {
                 this.handleTxError(err);
@@ -155,7 +171,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         try {
             this.postFrontRunTransaction.tx = await postFrontrunTxPromise;
-            logTransaction(this.postFrontRunTransaction.tx);
+            logTransaction(this.postFrontRunTransaction.tx, 'Post_Frontrun swap');
         } catch (err) {
             this.handleTxError(err);
             return;
@@ -176,31 +192,37 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
                 }
             );
     }
+    private async cancelTxIfNotMinedYet(tx: Transaction) {
+        console.log("Cancel");
 
-    private async handleTxError(error: any) {
-        const cancelTxIfNotMinedYet = async (tx: Transaction) => {
-            if (!tx.tx) {
-                console.log('Targeted transaction is not event exists');
-                return;
-            }
-
-            if (!tx.nonce) {
-                console.log('Cannot cancel, nonce is note set');
-                return;
-            }
-
-            if (tx.txReceipt) {
-                console.log('Cannot cancel, because tx is already mined');
-                return;
-            }
-
-            (await cancelTransaction(tx.nonce, tx.tx)).wait().then(v => {
-                console.log('Tx is canceled');
-            });
+        if (!tx.tx) {
+            console.log('Cancel: Targeted transaction is not event exists');
+            return;
         }
 
-        const p1 = cancelTxIfNotMinedYet(this.frontRunTransaction);
-        const p2 = cancelTxIfNotMinedYet(this.postFrontRunTransaction);
+        if (!tx.nonce) {
+            console.log('Cancel: Cannot cancel, nonce is note set');
+            return;
+        }
+
+        if (tx.txReceipt) {
+            console.log('Cancel: Cannot cancel, because tx is already mined');
+            return;
+        }
+
+        (await cancelTransaction(tx.nonce, tx.tx)).wait().then(v => {
+            console.log('Cancel: Tx is canceled');
+        });
+    }
+
+    private async handleTxError(error: any) {
+        console.error('ERROR OCCURRED. Trying to cancel transactions', error);
+
+        const p1 = this.cancelTxIfNotMinedYet(this.frontRunTransaction);
+        this.frontRunTransaction = {};
+
+        const p2 = this.cancelTxIfNotMinedYet(this.postFrontRunTransaction);
+        this.postFrontRunTransaction = {};
 
         try {
             await Promise.all([p1, p2]);
@@ -252,38 +274,28 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         console.log('!FR SWAP!');
 
-        const gasPrice = this.targetTransaction.gasPrice?.add(utils.parseUnits('3', 'gwei')) ?? 0;
+        const gasPrice = this.targetTransaction.gasPrice?.add(utils.parseUnits('10', 'gwei')) ?? 0;
         const path = this.decodedTx.path;
         const deadline = this.decodedTx.deadline;
 
-        const { amountOutMin } = await this.swapService.callStatic.swapExactETHForTokens(
+        const amountOut = (await this.swapService.getAmountsOut(
             ethValue,
             path,
-            maxSlippage,
-            deadline,
-        );
+        ))[path.length - 1];
 
-        // console.log(
-        //     'FR SWAP ARGS:',
-        //     amountOutMin.toString(),
-        //     path,
-        //     await signer.getAddress(),
-        //     deadline.toString(),
-        //     {
-        //         value: ethValue.toString(),
-        //         nonce: nonce,
-        //         gasPrice: gasPrice.toString()
-        //     }
-        // )
+        const amountOutMin = subPercentFromValue({ value: amountOut, decimals: tokenDecimals }, maxSlippage);
+
+        console.log(utils.formatUnits(amountOutMin, tokenDecimals));
 
         const promise = this.swapService.swapExactETHForTokens(
             ethValue,
             path,
-            maxSlippage,
+            amountOutMin,
             deadline,
             {
                 nonce: nonce,
-                gasPrice: gasPrice
+                gasPrice: gasPrice,
+                gasLimit: 500_000
             }
         )
 
@@ -306,21 +318,6 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         const path = Array.from(this.decodedTx.path).reverse();
         const deadline = this.decodedTx.deadline;
 
-        // const amountOutMin = subPercentFromValue({ value: amountOut, decimals: 18 }, slippage);
-
-        // console.log(
-        //     'POST SWAP ARGS:',
-        //     tokensAmount,
-        //     amountOutMin.toString(),
-        //     path,
-        //     signer.address,
-        //     deadline,
-        //     {
-        //         nonce: nonce,
-        //         gasPrice: gasPrice
-        //     }
-        // )
-
         const txPromise = this.swapService.swapExactTokensForETH(
             slippage,
             path,
@@ -328,7 +325,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             {
                 nonce: nonce,
                 gasPrice: gasPrice,
-                gasLimit: 1_000_000
+                gasLimit: 500_000
             }
         )
 

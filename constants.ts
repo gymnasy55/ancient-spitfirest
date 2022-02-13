@@ -21,7 +21,7 @@ const networkConfigs: NetworkInfoConfig = {
                 maxFREthValue: utils.parseEther('0.01')
             }
         },
-        frUnitAddress: '0xeb28B488382a27c98C2114F461AFF0350AC19686',
+        frUnitAddress: '0x30753887f69FA4e8562c08C9dC00e9ED302a4be0',
         handlers: {
             ['0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3']: {
                 factories: uniV2Handlers

@@ -44,40 +44,42 @@
   {
     "inputs": [
       {
-        "internalType": "contract IUniswapV2Router02",
+        "internalType": "address",
         "name": "router",
         "type": "address"
       },
       {
-        "internalType": "uint256",
-        "name": "amountToSwap",
-        "type": "uint256"
+        "internalType": "address",
+        "name": "tokenA",
+        "type": "address"
       },
       {
-        "internalType": "uint256",
-        "name": "slippage",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address[]",
-        "name": "path",
-        "type": "address[]"
+        "internalType": "address",
+        "name": "tokenB",
+        "type": "address"
       }
     ],
-    "name": "getAmountOutWithSlippage",
+    "name": "getReservesV2",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "amountOut",
+        "name": "reserveA",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "amountOutMin",
+        "name": "reserveB",
         "type": "uint256"
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -114,12 +116,12 @@
       },
       {
         "internalType": "uint256",
-        "name": "amountEth",
+        "name": "amountEthMax",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "maxSlippage",
+        "name": "amountOutMin",
         "type": "uint256"
       },
       {
@@ -138,16 +140,6 @@
       {
         "internalType": "uint256",
         "name": "amountOut",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amountOutMin",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "priceImpact",
         "type": "uint256"
       }
     ],
@@ -168,7 +160,7 @@
       },
       {
         "internalType": "uint256",
-        "name": "maxSlippage",
+        "name": "slippage",
         "type": "uint256"
       },
       {
@@ -187,11 +179,6 @@
       {
         "internalType": "uint256",
         "name": "amountOut",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amountOutMin",
         "type": "uint256"
       }
     ],
@@ -236,6 +223,11 @@
         "internalType": "uint256",
         "name": "amount",
         "type": "uint256"
+      },
+      {
+        "internalType": "address payable",
+        "name": "to",
+        "type": "address"
       }
     ],
     "name": "withdrawEth",
@@ -254,6 +246,11 @@
         "internalType": "uint256",
         "name": "amount",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
       }
     ],
     "name": "withdrawTokens",
