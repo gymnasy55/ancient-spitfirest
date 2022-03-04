@@ -13,7 +13,7 @@
     "@types/figlet": "^1.5.4",
     "@types/node": "^16.11.11",
     "bignumber.js": "^9.0.2",
-    "colors": "^1.4.0",
+    "colorts": "^0.1.63",
     "dotenv": "^10.0.0",
     "ethers": "^5.5.2",
     "figlet": "^1.5.2",

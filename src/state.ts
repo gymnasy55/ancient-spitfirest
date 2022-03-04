@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 
+
 interface AppState {
     frontrunningTransaction?: ethers.ContractTransaction,
     hasActiveFrontrun(): boolean,
@@ -10,7 +11,7 @@ const state = {
     frontrunningTransaction: undefined,
     hasActiveFrontrun() { return this.frontrunningTransaction !== undefined },
     resetActiveFrontrun(): void {
-        console.log('RESET!');
+        console.log('Frontrun is completed'.cyan)
         this.frontrunningTransaction = undefined;
     }
 } as AppState;

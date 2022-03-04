@@ -2,5 +2,9 @@
     {
         "address": "0x6326af92A030D6BfDCE0E1d3a4725733564AD58b",
         "decimals": 18
+    },
+    {
+        "address": "0xf7aD661843A9772C1b364377016FDF00Dbb2806B",
+        "decimals": 18
     }
 ]

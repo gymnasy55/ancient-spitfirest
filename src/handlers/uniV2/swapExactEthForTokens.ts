@@ -12,6 +12,7 @@ import { FrUnit__factory } from '../../../out/typechain/factories/FrUnit__factor
 type Transaction = {
     tx?: ethers.ContractTransaction,
     txReceipt?: ethers.ContractReceipt,
+    isCanceled: boolean,
     nonce?: number
 }
 
@@ -32,9 +33,9 @@ type SwapEthForTokensInput = {
 }
 
 export class SwapExactEthForTokensHandler extends TxHandlerBase {
-    private frontRunTransaction: Transaction = {}
+    private frontRunTransaction: Transaction = { isCanceled: false }
     private targetTransaction: ethers.ContractTransaction
-    private postFrontRunTransaction: Transaction = {}
+    private postFrontRunTransaction: Transaction = { isCanceled: false }
 
     private swapRouter: UniswapRouterV2;
     private swapService: SwapV2Service;
@@ -91,38 +92,35 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         const amountOutFormatted = bigNumberToNumber(amountsOut[amountsOut.length - 1], tokenDecimals);
         const amountOutMinFormatted = bigNumberToNumber(this.decodedTx.amountOutMin, tokenDecimals);
 
-        console.log(
-            '\namount in', bigNumberToNumber(tx.value),
-            '\namount out: ', amountOutFormatted,
-            '\namount out min:', amountOutMinFormatted);
-
         const slippage = calculateSlippage(
             amountOutFormatted,
             amountOutMinFormatted);
 
-        console.log('slippage: ', slippage, '%');
 
         if (slippage < env.MIN_SLIPPAGE_PERCENTAGE) {
             console.log('slippage is lower than minimal needed');
             return;
         }
+
+
         const balanceBefore = await provider.getBalance(this.swapService.unit.address);
-        console.log('BALANCE BEFORE: ', utils.formatEther(balanceBefore));
 
-        console.time('START calculateMaxETHToSend')
+        const tLable = 'max eth to send calc time';
+        console.time(tLable)
         const maxEthToSend = await this.swapService.calculateMaxETHToSend(this.decodedTx.amountOutMin, amountsOut, this.decodedTx.path);
-        console.timeEnd('START calculateMaxETHToSend')
+        console.timeEnd(tLable)
 
-        let ethToSend = maxEthToSend.mul(95).div(100);
+        let ethToSend = maxEthToSend.mul(env.MAX_ETH_TO_SEND_PERCENTAGE).div(100);
         ethToSend = ethToSend.gt(balanceBefore) ? balanceBefore : ethToSend;
 
-        console.log('maxEthToSend', ethers.utils.formatEther(maxEthToSend));
-        console.log('Eth to send', ethers.utils.formatEther(ethToSend));
-
-        // if (balanceBefore.lt(ethToSend)) {
-        //     console.error('INSUFFICIENT BALANCE!');
-        //     return;
-        // }
+        console.table({
+            token: this.swapToken.address,
+            amountIn: bigNumberToNumber(tx.value),
+            amountOutMin: amountOutMinFormatted,
+            slippage: slippage.toString() + '%',
+            maxEthToSend: parseFloat(ethers.utils.formatEther(maxEthToSend)),
+            ethWillBeSend: parseFloat(ethers.utils.formatEther(ethToSend))
+        });
 
         this.frontRunTransaction.nonce = await nonceManager.getNonce();
 
@@ -134,14 +132,14 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         try {
             this.frontRunTransaction.tx = (await frontrunTxPromise);
-            logTransaction(this.frontRunTransaction.tx, 'Frontrun swap');
+            logTransaction(this.frontRunTransaction.tx, 'Frontrun swap sended to mempool'.blue);
         } catch (err) {
             this.handleTxError(err);
             return;
         }
 
         this.frontRunTransaction.tx.wait().then(txReceipt => {
-            logTransaction(txReceipt, 'Frontrun swap completed!');
+            logTransaction(txReceipt, 'Frontrun tx completed!'.green);
             this.frontRunTransaction.txReceipt = txReceipt;
         }).catch(
             (err) => {
@@ -151,9 +149,9 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         );;
 
         tx.wait().then(txReceipt => {
-            logTransaction(txReceipt, 'Frontrun-ed tx is completed!');
+            logTransaction(txReceipt, 'Frontrun-ed tx is completed!'.green);
             if (!this.frontRunTransaction.txReceipt || !this.frontRunTransaction.tx) {
-                throw new Error('Frontrun-ed is completed but pre-frontrun transaction is not yet mined/sended');
+                throw new Error('Frontrun-ed is completed but pre/post-frontrun transactions is not yet mined/sended');
             }
 
         }).catch(
@@ -171,7 +169,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         try {
             this.postFrontRunTransaction.tx = await postFrontrunTxPromise;
-            logTransaction(this.postFrontRunTransaction.tx, 'Post_Frontrun swap');
+            logTransaction(this.postFrontRunTransaction.tx, 'Post Frontrun swap sended to mempool'.blue);
         } catch (err) {
             this.handleTxError(err);
             return;
@@ -179,7 +177,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
 
         this.postFrontRunTransaction.tx.wait()
             .then(txReceipt => {
-                logTransaction(txReceipt, 'post frontrun tx is completed');
+                logTransaction(txReceipt, 'Post Frontrun tx is completed!'.green);
                 this.postFrontRunTransaction.txReceipt = txReceipt;
                 this.handleSuccessFrontrun(
                     balanceBefore,
@@ -193,36 +191,44 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             );
     }
     private async cancelTxIfNotMinedYet(tx: Transaction) {
-        console.log("Cancel");
-
         if (!tx.tx) {
-            console.log('Cancel: Targeted transaction is not event exists');
+            console.log('Cancel: Targeted transaction is not event exists'.red);
             return;
         }
 
         if (!tx.nonce) {
-            console.log('Cancel: Cannot cancel, nonce is note set');
+            console.log('Cancel: Cannot cancel, nonce is note set'.red);
             return;
         }
 
         if (tx.txReceipt) {
-            console.log('Cancel: Cannot cancel, because tx is already mined');
+            console.log('Cancel: Cannot cancel, because tx is already mined'.red);
             return;
         }
 
         (await cancelTransaction(tx.nonce, tx.tx)).wait().then(v => {
-            console.log('Cancel: Tx is canceled');
+            console.log('Cancel: Tx is canceled'.red);
         });
     }
 
     private async handleTxError(error: any) {
-        console.error('ERROR OCCURRED. Trying to cancel transactions', error);
+        console.error('Tx error. Trying to cancel transactions'.red);
 
-        const p1 = this.cancelTxIfNotMinedYet(this.frontRunTransaction);
-        this.frontRunTransaction = {};
+        let p1, p2: Promise<void>;
 
-        const p2 = this.cancelTxIfNotMinedYet(this.postFrontRunTransaction);
-        this.postFrontRunTransaction = {};
+        if (!this.frontRunTransaction.isCanceled) {
+            p1 = this.cancelTxIfNotMinedYet(this.frontRunTransaction);
+            this.frontRunTransaction = { isCanceled: true };
+        } else {
+            p1 = Promise.resolve();
+        }
+
+        if (!this.postFrontRunTransaction.isCanceled) {
+            p2 = this.cancelTxIfNotMinedYet(this.postFrontRunTransaction);
+            this.postFrontRunTransaction = { isCanceled: true }
+        } else {
+            p2 = Promise.resolve();
+        }
 
         try {
             await Promise.all([p1, p2]);
@@ -272,9 +278,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
             minTokensGet: BigNumber
         }> {
 
-        console.log('!FR SWAP!');
-
-        const gasPrice = this.targetTransaction.gasPrice?.add(utils.parseUnits('10', 'gwei')) ?? 0;
+        const gasPrice = this.targetTransaction.gasPrice?.add(utils.parseUnits('20', 'gwei')) ?? 0;
         const path = this.decodedTx.path;
         const deadline = this.decodedTx.deadline;
 
@@ -284,8 +288,6 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
         ))[path.length - 1];
 
         const amountOutMin = subPercentFromValue({ value: amountOut, decimals: tokenDecimals }, maxSlippage);
-
-        console.log(utils.formatUnits(amountOutMin, tokenDecimals));
 
         const promise = this.swapService.swapExactETHForTokens(
             ethValue,
@@ -311,9 +313,7 @@ export class SwapExactEthForTokensHandler extends TxHandlerBase {
     ): Promise<{
         txPromise: Promise<ContractTransaction>
     }> {
-        console.log('!POST SWAP!');
-
-        const gasPrice = this.targetTransaction.gasPrice?.sub(1) ?? 0;
+        const gasPrice = this.targetTransaction.gasPrice;
 
         const path = Array.from(this.decodedTx.path).reverse();
         const deadline = this.decodedTx.deadline;

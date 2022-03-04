@@ -33,7 +33,7 @@ export const equalWithEpsilon = (a: BigNumber, b: BigNumber, eps: BigNumber): bo
 export const cancelTransaction = async (nonce: number, tx: ethers.ContractTransaction): Promise<ethers.ContractTransaction> => {
     return await signer.sendTransaction({
         to: signer.address,
-        gasPrice: tx.gasPrice?.add(utils.parseUnits('2', 'gwei')),
+        gasPrice: tx.gasPrice?.add(utils.parseUnits('1', 'gwei')),
         nonce: nonce,
         value: BigNumber.from(0)
     })

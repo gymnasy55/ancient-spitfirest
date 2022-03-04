@@ -1,13 +1,14 @@
 import figlet from "figlet";
 import app from "./src/app";
 import bn from "bignumber.js";
-import { BigNumber, ethers, utils } from 'ethers';
 
 const APP_NAME = 'Spitfirest BOT';
 
 (async () => {
-    figlet(APP_NAME, (err, data) => {
+    figlet(APP_NAME, (_, data) => {
         console.log(data);
+        // executed here, to prevent logo appearance after 
+        // app start executing
+        app();
     })
-    await app();
 })();

@@ -50,27 +50,16 @@ export class SwapV2Service {
         const tokenA = path[path.length - 2];
         const tokenB = path[path.length - 1];
 
-        console.log('tokens', { tokenA, tokenB });
-
         const { reserveA, reserveB } = await this.unit.callStatic.getReservesV2(this.router.address, tokenA, tokenB);
-
-        console.log('reserves', { reserveA, reserveB });
 
         const amountIn = amountsOut[path.length - 2];
 
-        console.log('amount in', { amountIn });
-
-        console.time('CALC')
         const res = this._calculateMaxTokenToSend(
             new bn(amountIn.toString()),
             new bn(amountOutMin.toString()),
             new bn(reserveA.toString()),
             new bn(reserveB.toString())
         )
-        console.timeEnd('CALC')
-
-
-        console.log('res', { res });
 
         return (
             path.length > 2 ?
@@ -84,26 +73,14 @@ export class SwapV2Service {
         reserveA: bn,
         reserveB: bn
     ) {
-        console.log('Input Params: ', {
-            in: amountIn.toFixed(),
-            outMin: amountOutMin.toFixed(),
-            reserveA: reserveA.toFixed(),
-            reserveB: reserveB.toFixed(),
-        })
-
         const a = amountIn;
         const b = amountIn.multipliedBy(amountOutMin).minus(amountIn.multipliedBy(reserveB).multipliedBy(2));
         const c = amountIn.multipliedBy(reserveB).multipliedBy(reserveB.minus(amountOutMin)).minus(reserveA.multipliedBy(reserveB).multipliedBy(amountOutMin));
 
         const desc = b.multipliedBy(b).minus(a.multipliedBy(c).multipliedBy(4));
 
-        console.log('equation params', { a: a.toFixed(), b: b.toFixed(), c: c.toFixed(), desc: desc.toFixed() });
-
         const y = b.multipliedBy(-1).minus(desc.sqrt()).div(a.multipliedBy(2));
         const x = reserveA.multipliedBy(reserveB).div(reserveB.minus(y)).minus(reserveA);
-
-        console.log('y', y.toFixed(0));
-        console.log('x', x.toFixed(0));
 
         return x.toFixed(0);
     }

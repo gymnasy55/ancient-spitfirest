@@ -1,38 +1,38 @@
-import { BigNumber,  utils, providers } from 'ethers';
+import { BigNumber, utils, providers } from 'ethers';
 import { provider, network, signer } from '../constants';
 import { ITxHandler } from './handlers/handlerBase';
-import { equalWithEpsilon, handleError, logTransaction } from './helpers';
-import state from "./state";
+import { equalWithEpsilon, handleError } from './helpers';
+import 'colorts/lib/string';
 
 export default async () => {
-    console.log('Started FrontRunning')
+    console.log('Watching mempool...'.green)
     provider.on('pending', handlePendingTransaction);
 }
 
 const handlePendingTransaction = async (txHash: string) => {
-    if (state.hasActiveFrontrun()) {
-        if (state.frontrunningTransaction?.hash?.toLowerCase() === txHash.toLowerCase()) {
-            console.log('FRONTRUNNING TRANSACTION IS CHANGED');
-            // todo handle somehow
-        }
-        return;
-    }
+    // if (state.hasActiveFrontrun()) {
+    //     if (state.frontrunningTransaction?.hash?.toLowerCase() === txHash.toLowerCase()) {
+    //         console.log('FRONTRUNNING TRANSACTION IS CHANGED');
+    //         // todo handle somehow
+    //     }
+    //     return;
+    // }
 
 
     const tx = await provider.getTransaction(txHash);
 
     if (!(tx && tx.to && tx.gasPrice && tx.value)) {
-        //  console.error(`Invalid tx`);
+        // console.error(`Invalid tx`);
         return;
     }
 
     if (tx.from.toLowerCase() === signer.address) {
-        console.error(`Self tx found. Skipping`);
+        // console.error(`Self tx found. Skipping`.yellow);
         return;
     }
 
     if (!network.swapRouterAddresses.includes(tx.to)) {
-        //console.error(`Tx 'to' is not a swapRouter. To: ${tx.to}`);
+        // console.error(`Tx 'to' is not a swapRouter. To: ${tx.to}`.yellow);
         return;
     }
 
@@ -41,14 +41,14 @@ const handlePendingTransaction = async (txHash: string) => {
 
     // todo fix!
     if (!equalWithEpsilon(tx.gasPrice, baseGasPrice, utils.parseUnits('0.5', 'gwei'))) {
-        console.error(`Gas price is lower/higher than the avg. ${fmtGwei(tx.gasPrice)} ${tx.gasPrice.gt(baseGasPrice) ? '>' : '<'} ${fmtGwei(baseGasPrice)}`);
+        // console.error(`Gas price is lower/higher than the avg. ${fmtGwei(tx.gasPrice)} ${tx.gasPrice.gt(baseGasPrice) ? '>' : '<'} ${fmtGwei(baseGasPrice)}`);
         return;
     }
 
     const methodId = getMethodIdFromInputData(tx.data);
 
     if (!isHandlerExists(tx.to, methodId)) {
-        console.error(`Unsupported swap method`);
+        // console.error(`Unsupported swap method`.yellow);
         return;
     }
 
@@ -60,14 +60,14 @@ const handlePendingTransaction = async (txHash: string) => {
 }
 
 const executeFrontRunSwap = async (tx: providers.TransactionResponse, handler: ITxHandler) => {
-    if (state.hasActiveFrontrun()) {
-        console.info('Already performing front run swap');
-        return;
-    }
+    // if (state.hasActiveFrontrun()) {
+    //     console.info('Already performing front run swap');
+    //     return;
+    // }
 
-    state.frontrunningTransaction = tx;
+    // state.frontrunningTransaction = tx;
 
-    console.log('!! Front Run Swap !!')
+    console.log('Handle swap'.cyan)
 
     await handler.handleSwap();
 }
